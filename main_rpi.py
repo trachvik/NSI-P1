@@ -9,3 +9,6 @@ def handshake():
             break
 
 handshake()
+
+while True:
+    pass
