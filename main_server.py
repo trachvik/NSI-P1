@@ -4,6 +4,9 @@ import time
 
 BAUD = 115200
 RPI_VID = 0x2E8A
+measure_period = 2000
+
+# I'm using .strip() to avoid unreliable end-of-line characters in the serial communication
 
 def find_rpi_port():
     for port in serial.tools.list_ports.comports():
@@ -17,18 +20,28 @@ if PORT is None:
     raise RuntimeError('Raspberry Pi not found. Check USB connection.')
 
 ser = serial.Serial(PORT, BAUD, timeout=1)
-time.sleep(2)  # Wait for the serial connection to initialize
+time.sleep(2)  # Wait for Pico to boot
 
 def handshake():
-    global ser
     ser.write(b'<PING>\n')
     while True:
         response = ser.readline()
-        print(f'Server received: {response}')
-        if response == b'<PONG:PICO_OK>\n':
-            print('Server:Handshake successful')
+        #print(f'Server received: {response}')
+        if response.strip() == b'<PONG:PICO_OK>':
+            print('Server: Handshake successful')
             break
+def measurements_loop():
+    while True:
+        response = ser.readline()
+        #if response:
+            #print(f'Raw: {response}')
+        if response.startswith(b'<DATA:'):
+            temp = float(response.decode().strip()[6:-1])
+            print(f'Received data from RPI: {temp} °C')
 
 handshake()
 
+# Set measurement period to 1000 ms (1 second):
+ser.write((f'<SET_T:{measure_period}>\n').encode()) # .encode() converts the string to bytes for serial communication
 
+measurements_loop()
