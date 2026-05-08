@@ -15,7 +15,6 @@ timer_connected = machine.Timer()
 timer_watchdog = machine.Timer()
 blink_counter = 0
 
-
 flag = False
 watchdog_triggered = False
 watchdog_period = 20000
@@ -36,13 +35,14 @@ def leds_off():
 
 def handshake():
     while True:
-        data = sys.stdin.readline()
-        if data.strip() == '<PING>':
-            timer_watchdog.init(period=watchdog_period, mode=machine.Timer.ONE_SHOT, callback=watchdog_clb)
-            sys.stdout.write('<PONG:PICO_OK>\n') # sys.stdout.write() receives a string and sends UTF-8 encoded bytes to the serial port
-            print('RPI:Handshake successful')
-            timer_disconnected.deinit()  # stop disconnect blinking when connected
-            break
+        if poll.poll(1):  # 1 ms timeout
+            data = sys.stdin.readline()
+            if data.strip() == '<PING>':
+                timer_watchdog.init(period=watchdog_period, mode=machine.Timer.ONE_SHOT, callback=watchdog_clb)
+                sys.stdout.write('<PONG:PICO_OK>\n') # sys.stdout.write() receives a string and sends UTF-8 encoded bytes to the serial port
+                print('RPI:Handshake successful')
+                timer_disconnected.deinit()  # stop disconnect blinking when connected
+                break
 
 def watchdog_clb(t):
     global watchdog_triggered
@@ -59,8 +59,12 @@ def blink_clb(t):
         blink_counter = 0
 
 def blink_off_clb(t):
+    global blink_counter
     state_led.value(0)
-    timer_blinks.init(period=100, mode=machine.Timer.ONE_SHOT, callback=blink_clb)
+    if blink_counter <= 3:
+        timer_blinks.init(period=100, mode=machine.Timer.ONE_SHOT, callback=blink_clb)
+    else:
+        blink_counter = 0
 
 def disconnected_clb(t):
     global blink_counter
@@ -76,9 +80,7 @@ def measure_flag(t):
     flag = True
 
 def parse_n_handle(data):
-    global init
     if data.startswith('<SET_T:'):
-        init = False
         state_led.value(0)
         measure_period = int(data.strip()[7:-1])  # Extract the number from the command | [7:-1] removes the '<SET_T:' prefix (7) and the '>' suffix ()
         timer_watchdog.init(period=watchdog_period, mode=machine.Timer.ONE_SHOT, callback=watchdog_clb)
@@ -93,6 +95,8 @@ def parse_n_handle(data):
         led_r.duty_u16(int(r * 65535 / 255))  # Scale 0-255 to 0-65535 for PWM duty cycle
         led_g.duty_u16(int(g * 65535 / 255))
         led_b.duty_u16(int(b * 65535 / 255))
+    elif data.strip() == '<KEEP_ALIVE>':
+        timer_watchdog.init(period=watchdog_period, mode=machine.Timer.ONE_SHOT, callback=watchdog_clb)
 
 
 timer_disconnected.init(period=5000, mode=machine.Timer.PERIODIC, callback=disconnected_clb)
