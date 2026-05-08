@@ -15,30 +15,32 @@ def find_rpi_port():
             return port.device
     return None
 
-PORT = find_rpi_port()
-if PORT is None:
-    raise RuntimeError('Raspberry Pi not found. Check USB connection.')
+def connect_rpi():
+    global ser
+    PORT = find_rpi_port()
+    if PORT is None:
+        raise RuntimeError('Raspberry Pi not found. Check USB connection.')
+    ser = serial.Serial(PORT, BAUD, timeout=1)
+    time.sleep(2)  # Wait for Pico to boot
 
-ser = serial.Serial(PORT, BAUD, timeout=1)
-time.sleep(2)  # Wait for Pico to boot
 
 def handshake():
-    ser.write(b'<PING>\n')
     while True:
-        response = ser.readline()
-        #print(f'Server received: {response}')
-        if response.strip() == b'<PONG:PICO_OK>':
-            print('Server: Handshake successful')
+        try:
+            connect_rpi()
+            ser.write(b'<PING>\n')
+            response = ser.readline()
+            #print(f'Server received: {response}')
+            if response.strip() == b'<PONG:PICO_OK>':
+                print('Server: Handshake successful')
+                # Set measurement period
+                ser.write((f'<SET_T:{measure_period}>\n').encode()) # .encode() converts the string to bytes for serial communication
             break
-def measurements_loop():
-    while True:
-        response = ser.readline()
-        #if response:
-            #print(f'Raw: {response}')
-        if response.startswith(b'<DATA:'):
-            temp = float(response.decode().strip()[6:-1])
-            print(f'Received data from RPI: {temp} °C')
-            leds_control(temp)
+        except:
+            print('Server: Handshake failed, retrying in 5 seconds...')
+            time.sleep(5)
+            pass
+
 def leds_control(temp):
     #blue:
     if temp < 18.0:
@@ -63,7 +65,18 @@ def leds_control(temp):
 
 handshake()
 
-# Set measurement period to 1000 ms (1 second):
-ser.write((f'<SET_T:{measure_period}>\n').encode()) # .encode() converts the string to bytes for serial communication
+while True:
+    try:
+        response = ser.readline()
+        #if response:
+            #print(f'Raw: {response}')
+        if response.startswith(b'<DATA:'):
+            temp = float(response.decode().strip()[6:-1])
+            print(f'Received data from RPI: {temp} °C')
+            leds_control(temp)
+    except Exception as e:
+        print(f'Serial error: {e}')
+        handshake()  # Try to re-establish connection
 
-measurements_loop()
+
+
